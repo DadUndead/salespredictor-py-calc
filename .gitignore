@@ -35,3 +35,4 @@ packages/
 /__pycache__/
 */__pycache__/*
 authorized_key.json
+/build/
