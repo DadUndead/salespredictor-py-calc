@@ -23,6 +23,7 @@ Thumbs.db
 [Dd]ebug*/
 *.lib
 *.sbr
+*.env
 obj/
 [Rr]elease*/
 _ReSharper*/
@@ -33,3 +34,4 @@ packages/
 /.vscode/settings.json
 /__pycache__/
 */__pycache__/*
+authorized_key.json

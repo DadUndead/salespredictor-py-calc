@@ -1,7 +1,7 @@
+# syntax=docker/dockerfile:1
+
 # start by pulling the python image
 FROM python:3.9-slim-bullseye
-
-ENV PYTHONUNBUFFERED=1
 
 # copy the requirements file into the image
 COPY ./requirements.txt /app/requirements.txt
@@ -15,7 +15,6 @@ RUN pip install -r requirements.txt --user
 # copy every content from the local file to the image
 COPY . /app
 
-# configure the container to run in an executed manner
 ENTRYPOINT [ "python" ]
 
-CMD [ "./app/app.py"]
+CMD [ "./app/app.py" ]

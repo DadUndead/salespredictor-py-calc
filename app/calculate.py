@@ -32,22 +32,26 @@ def calculate(data: dict):
     # analog=['','','',''] # список аналогов (если аналогов нет, то просто список пустых полей)
     # profit=[4496,3726,4509,1000] # список сумм прибыли на единицу соответствующей товарной позиции
     # costs=[12155,10074,12191,10000] # список затрат (хранение+"заморозка денежных средств") на единицу соответствующей товарной позиции
-    months = data['months']   # список количества месяцев, для которых необходимо провести расчеты по соответствующей товарной позиции
-    period_start = data['period_start']  # период начала моделирования с момента последнего периода, на которые есть статистические данные по продажам
-    forecast_period = data['forecast_period']   # период для прогнозирования продаж
+    # список количества месяцев, для которых необходимо провести расчеты по соответствующей товарной позиции
+    months = data['months']
+    # период начала моделирования с момента последнего периода, на которые есть статистические данные по продажам
+    period_start = data['period_start']
+    # период для прогнозирования продаж
+    forecast_period = data['forecast_period']
     # технический параметр для объема генерации случайных чисел в коде (увеличивает гладкость распределений, но и увеличивает время расчета)
-    random_amount = data['random_amount'] 
+    random_amount = data['random_amount']
     # параметр определения момента окончания моделирования (означает вероятность того, что к моменту окончания моделирования
     failure_chance = data['failure_chance']
     # мы не продадим всю произведенную продукцию)
-    interest = data['interest']   # процент стоимости денег для расчета стоимости "затоваривания"
+    # процент стоимости денег для расчета стоимости "затоваривания"
+    interest = data['interest']
 
     # In[4]:
 
     # список прогнозируемых позиций
     forc_series = data['forc_series']
     # список сумм прибыли на единицу соответствующей товарной позиции
-    profit =data['profit']
+    profit = data['profit']
     # список затрат (хранение+"заморозка денежных средств") на единицу соответствующей товарной позиции
     costs = data['costs']
 
@@ -117,9 +121,11 @@ def calculate(data: dict):
                 if m == 0:
                     y = np.zeros([1, random_amount, len(forc_series)])
                     SUM_SALES = np.concatenate([SUM_SALES, y], axis=0)
-                    SUM_SALES[i, :, m] = np.array(sales).reshape(1, random_amount)
+                    SUM_SALES[i, :, m] = np.array(
+                        sales).reshape(1, random_amount)
                 else:
-                    SUM_SALES[i, :, m] = np.array(sales).reshape(1, random_amount)
+                    SUM_SALES[i, :, m] = np.array(
+                        sales).reshape(1, random_amount)
 
         i += 1
 
@@ -178,9 +184,11 @@ def calculate(data: dict):
                 if m == 0:
                     y = np.zeros([1, random_amount, len(forc_series)])
                     SUM_SALES = np.concatenate([SUM_SALES, y], axis=0)
-                    SUM_SALES[i, :, m] = np.array(sales).reshape(1, random_amount)
+                    SUM_SALES[i, :, m] = np.array(
+                        sales).reshape(1, random_amount)
                 else:
-                    SUM_SALES[i, :, m] = np.array(sales).reshape(1, random_amount)
+                    SUM_SALES[i, :, m] = np.array(
+                        sales).reshape(1, random_amount)
         q = []
         for m in range(len(forc_series)):
             q.append(np.quantile(
@@ -381,8 +389,8 @@ def calculate(data: dict):
         print(
             f'Потери затовар при 95% покрытии склада: {np.round(storage_lost95,2)}')
 
-        ## ======================================================
-        ## графики
+        # ======================================================
+        # графики
         # plt.figure(figsize=(10, 7))
         # plt.plot(sales_forecast, label='Матожидание')
         # plt.plot(sales_forecast_median, label='Медиана')
@@ -410,7 +418,7 @@ def calculate(data: dict):
         # plt.xlabel('Время')
         # plt.ylabel('Продажи, шт.')
         # plt.show()
-        ## ======================================================
+        # ======================================================
 
         # запись совокупных характеристик в массив для экспорта
         print(f'запись совокупных характеристик в массив для экспорта')
@@ -490,18 +498,25 @@ def calculate(data: dict):
         # DATA2=pd.concat([DATA2,pd.DataFrame(np.quantile(SUM_SALES[:,:,m],xproc,axis=1),
         # columns=['Оптимальный склад по периодам по позиции "{}"'.format(forc_series[m])])],axis=1)
 
+
+    result = dict()
+
+    result['forecast'] = DATA
+    result['testnewforecastperiod'] = DATA1.transpose()
+    result['testnewforecastforward'] = DATA2.transpose()
+
     # экспорт сформированной базы в эксель
     # DATA.to_excel('./forecast_results.xlsx')
-    DATA1 = DATA1.transpose()
+    # DATA1 = DATA1.transpose()
     # экспорт сформированной базы в эксель на период
     # DATA1.to_excel('./testnewforecastperiod_results.xlsx')
-    DATA2 = DATA2.transpose()
+    # DATA2 = DATA2.transpose()
     # экспорт сформированной базы в эксель на период
     # DATA2.to_excel('./testnewforecastforward_results.xlsx')
 
     # как выбрать N, что такое альфа, как работает расчет времени распродажи, как задать точное колво периодов прогноза
 
-    return DATA
+    return result
 
 
 sys.modules[__name__] = calculate

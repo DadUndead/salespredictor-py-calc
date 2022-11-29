@@ -1,14 +1,14 @@
 import sys
 import pandas as pd
 
-def data_parse(df_url: str, df_input_url: str):
+def data_parse(data_file_url, data_file_input_url):
 
     # загрузка файла с исходными данными
     # df = pd.read_excel('./kipaso_data2.xlsx')
     # df_input = pd.read_excel('./kipaso_data2_input.xlsx')
     
-    df = pd.read_excel(df_url)
-    df_input = pd.read_excel(df_input_url)
+    df = pd.read_excel(data_file_url)
+    df_input = pd.read_excel(data_file_input_url)
 
     data = dict()
 
