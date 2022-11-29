@@ -20,6 +20,7 @@ app = Flask(__name__)
 def hello_world():
     return 'Hello user!'
 
+
 async def df_to_excel(df):
     # Creating output and writer (pandas excel writer)
     out = io.BytesIO()
@@ -36,7 +37,8 @@ async def df_to_excel(df):
 async def process_files_async():
 
     token = get_token(request.headers['Authorization'])
-    decoded_token = jwt.decode(token, environ['TOKEN_KEY'],  algorithms=["HS256"])
+    decoded_token = jwt.decode(
+        token, environ['TOKEN_KEY'],  algorithms=["HS256"])
     user_id = decoded_token['user_id']
 
     request_id = request.json['requestId']
@@ -70,22 +72,30 @@ async def process_files_async():
     except:
         print('Error (data_parse): Failed to get or parse files from s3.')
         return abort(400)
-    
+
     print(f'parsed data->{data}')
 
     try:
         calculated_data = calc(data)
     except:
         print('Error (calculate): Failed to calculate results.')
-
-    forecast_file = await df_to_excel(calculated_data['forecast'], )
-    testnewforecastperiod_file = await df_to_excel(calculated_data['testnewforecastperiod'], )
-    testnewforecastforward_file = await df_to_excel(calculated_data['testnewforecastforward'], )
+        return abort(400)
 
     try:
-        await s3.upload(f'storage/{user_id}/requests/{request_id}/forecast_results.xlsx', forecast_file)
-        await s3.upload(f'storage/{user_id}/requests/{request_id}/testnewforecastperiod_results.xlsx', testnewforecastperiod_file)
-        await s3.upload(f'storage/{user_id}/requests/{request_id}/testnewforecastforward_results.xlsx', testnewforecastforward_file)
+        forecast_period_file = await df_to_excel(calculated_data['forecast_period'] )
+        print('successfully calculated forecast_period')
+        forecast_forward_file = await df_to_excel(calculated_data['forecast_forward'])
+        print('successfully calculated forecast_forward')
+        forecast_common_forward_file = await df_to_excel(calculated_data['forecast_common_forward'])
+        print('successfully calculated forecast_common_forward')
+    except:
+        print('Error (to excel): Failed to convert calculated data to excel.')
+        return abort(400)
+
+    try:
+        await s3.upload(f'storage/{user_id}/requests/{request_id}/forecast_period_results.xlsx', forecast_period_file)
+        await s3.upload(f'storage/{user_id}/requests/{request_id}/forecast_forward_results.xlsx', forecast_forward_file)
+        await s3.upload(f'storage/{user_id}/requests/{request_id}/forecast_common_forward_results.xlsx', forecast_common_forward_file)
     except:
         print('Error (upload results): Failed to save result files on s3.')
         return abort(400)
