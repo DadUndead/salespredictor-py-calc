@@ -2,18 +2,25 @@ import json
 import os
 import uuid
 from urllib.parse import urlencode
+from datetime import datetime
+from pathlib import Path
 
-import zipfile
 
+from zipfile import ZipInfo, ZipFile
+
+import ydb
 import boto3
 import requests
 
 import data_parse
 import calculate as calc
+import io
+import pandas as pd
+
 
 boto_session = None
 storage_client = None
-docapi_table = None
+db_pool = None
 ymq_queue = None
 
 
@@ -51,17 +58,20 @@ def get_ymq_queue():
     return ymq_queue
 
 
-def get_docapi_table():
-    global docapi_table
-    if docapi_table is not None:
-        return docapi_table
+def get_db_pool():
+    global db_pool
+    if db_pool is not None:
+        return db_pool
 
-    docapi_table = get_boto_session().resource(
-        'dynamodb',
-        endpoint_url=os.environ['DOCAPI_ENDPOINT'],
-        region_name='ru-central1'
-    ).Table('tasks')
-    return docapi_table
+    # Create driver in global space.
+    driver = ydb.Driver(
+        endpoint=os.environ['ENDPOINT'], database=os.environ['DATABASE'])
+    # Wait for the driver to become active for requests.
+    driver.wait(fail_fast=True, timeout=5)
+    # Create the session pool instance to manage YDB sessions.
+    db_pool = ydb.SessionPool(driver)
+
+    return db_pool
 
 
 def get_storage_client():
@@ -82,15 +92,18 @@ def get_storage_client():
 def unzip_archive(zip_url, dest):
     client = get_storage_client()
     bucket = os.environ['BUCKET_NAME']
-    path_to_zip_file = './tmp/request.zip'
-    client.download_file(zip_url, bucket, path_to_zip_file)
-    with zipfile.ZipFile(path_to_zip_file, 'r') as zip_ref:
+    path_to_zip_file = '/tmp/request.zip'
+    print(f'Downloading {zip_url} to {path_to_zip_file}.')
+    client.download_file(bucket, zip_url, path_to_zip_file)
+    print(f'Unzipping {path_to_zip_file} to {dest}.')
+    with ZipFile(path_to_zip_file, 'r') as zip_ref:
         zip_ref.extractall(dest)
 
 
 def upload_and_presign(file_path, object_name):
     client = get_storage_client()
-    client.upload_file(file_path, os.environ['BUCKET_NAME'], object_name)
+    bucket = os.environ['BUCKET_NAME']
+    client.upload_file(file_path, bucket, object_name)
     return client.generate_presigned_url('get_object', Params={'Bucket': bucket, 'Key': object_name}, ExpiresIn=3600)
 
 
@@ -107,26 +120,40 @@ def df_to_excel(df):
     return out.getvalue()
 
 
+def complete_task(task_id, status, result_download_url):
+    def callee(session):
+        current_datetime = datetime.now()
+        prepared_query = session.prepare(
+            f"""
+                UPDATE requests
+                SET status = 'complete', finished_at = DateTime::FromMicroseconds({current_datetime.microsecond}), result_url = '{result_download_url}'
+                WHERE id = "{task_id}"
+            """)
+        result_sets = session.transaction().execute(prepared_query, commit_tx=True)
+
+    task = get_db_pool().retry_operation_sync(callee)
+
+
 def handle_process_event(event, context):
     for message in event['messages']:
         task_json = json.loads(message['details']['message']['body'])
         task_id = task_json['task_id']
-
+        
         print('Unzipping request archive...')
-        unzip_archive(task_json['zip_url'], './tmp/unzipped')
+        unzip_archive(task_json['zip_url'], '/tmp')
 
         # Calculate result
 
         try:
-            data = data_parse('./tmp/data.xlsx', './tmp/data_input,xlsx')
-        except:
-            print('Error (data_parse): Failed to parse data files.')
+            data = data_parse('/tmp/data.xlsx', '/tmp/data_input.xlsx')
+        except Exception as e:
+            print(f'Error (data_parse): Failed to parse data files. ' + str(e))
             return
 
         try:
             calculated_data = calc(data)
-        except:
-            print('Error (calculate): Failed to calculate results.')
+        except Exception as e:
+            print('Error (calculate): Failed to calculate results. ' + str(e))
             return
 
         try:
@@ -136,33 +163,31 @@ def handle_process_event(event, context):
             print('successfully calculated forecast_forward')
             forecast_common_forward_file = df_to_excel(calculated_data['forecast_common_forward'])
             print('successfully calculated forecast_common_forward')
-        except:
-            print('Error (to excel): Failed to convert calculated data to excel.')
+        except Exception as e:
+            print('Error (to excel): Failed to convert calculated data to excel.' + str(e))
             return
 
-        zip_buffer = io.BytesIO()
+        ###########
+        archive = io.BytesIO()
 
-        with zipfile.ZipFile(zip_buffer, "a",
-                             zipfile.ZIP_DEFLATED, False) as zip_file:
-            for file_name, data in [('forecast_period_results.xlsx', forecast_period_file),
-                                    ('forecast_forward_results.xlsx',
-                                     forecast_forward_file),
-                                    ('forecast_common_forward_results.xlsx', forecast_common_forward_file)]:
-                zip_file.writestr(file_name, data.getvalue())
+        with ZipFile(archive, 'w') as zip_archive:
+            # Create three files on zip archive
+            
+            file1 = ZipInfo('forecast_period_results.xlsx')
+            zip_archive.writestr(file1, forecast_period_file)
+            file2 = ZipInfo('forecast_forward_results.xlsx')
+            zip_archive.writestr(file2, forecast_forward_file)
+            file3 = ZipInfo('forecast_common_forward_results.xlsx')
+            zip_archive.writestr(file3, forecast_common_forward_file)
 
-        zip_file.write('./tmp/result.zip')
-        zip_file.close()
+        # Flush archive stream to a file on disk
+        with open('/tmp/result.zip', 'wb') as f:
+            f.write(archive.getbuffer())
 
-        result_object = f"result-{task_id}.zip"
+        result_object = task_json['zip_url'].replace("request.zip", "result.zip")
         # Upload to Object Storage and generate presigned url
         result_download_url = upload_and_presign(
             '/tmp/result.zip', result_object)
         # Update task status in DocAPI
-        get_docapi_table().update_item(
-            Key={'task_id': task_id},
-            AttributeUpdates={
-                'status': {'Value': 'complete', 'Action': 'PUT'},
-                'result_url': {'Value': result_download_url, 'Action': 'PUT'},
-            }
-        )
+        complete_task(task_id, 'complete', result_download_url)
     return "OK"
