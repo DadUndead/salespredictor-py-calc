@@ -104,7 +104,7 @@ def upload_and_presign(file_path, object_name):
     client = get_storage_client()
     bucket = os.environ['BUCKET_NAME']
     client.upload_file(file_path, bucket, object_name)
-    return client.generate_presigned_url('get_object', Params={'Bucket': bucket, 'Key': object_name}, ExpiresIn=3600)
+    return client.generate_presigned_url('get_object', Params={'Bucket': bucket, 'Key': object_name})
 
 
 def df_to_excel(df):
