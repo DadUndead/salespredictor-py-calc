@@ -2,7 +2,6 @@ import json
 import os
 import uuid
 from urllib.parse import urlencode
-from datetime import datetime
 from pathlib import Path
 
 
@@ -12,6 +11,7 @@ import ydb
 import boto3
 import requests
 
+import time
 import data_parse
 import calculate as calc
 import io
@@ -122,11 +122,11 @@ def df_to_excel(df):
 
 def complete_task(task_id, status, result_download_url):
     def callee(session):
-        current_datetime = datetime.now()
+        current_datetime = round(time.time() * 1000)
         prepared_query = session.prepare(
             f"""
                 UPDATE requests
-                SET status = 'complete', finished_at = DateTime::FromMicroseconds({current_datetime.microsecond}), result_url = '{result_download_url}'
+                SET status = 'complete', finished_at = DateTime::FromMilliseconds({current_datetime}), result_url = '{result_download_url}'
                 WHERE id = "{task_id}"
             """)
         result_sets = session.transaction().execute(prepared_query, commit_tx=True)
