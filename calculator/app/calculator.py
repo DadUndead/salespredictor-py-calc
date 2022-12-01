@@ -1,15 +1,9 @@
 import json
 import os
-import uuid
-from urllib.parse import urlencode
-from pathlib import Path
-
-
 from zipfile import ZipInfo, ZipFile
 
 import ydb
 import boto3
-import requests
 
 import time
 import data_parse
@@ -104,7 +98,7 @@ def upload_and_presign(file_path, object_name):
     client = get_storage_client()
     bucket = os.environ['BUCKET_NAME']
     client.upload_file(file_path, bucket, object_name)
-    return client.generate_presigned_url('get_object', Params={'Bucket': bucket, 'Key': object_name})
+    return client.generate_presigned_url('get_object', Params={'Bucket': bucket, 'Key': object_name}, ExpiresIn=604800)
 
 
 def df_to_excel(df):
@@ -129,18 +123,22 @@ def complete_task(task_id, status, result_download_url):
                 SET status = 'complete', finished_at = DateTime::FromMilliseconds({current_datetime}), result_url = '{result_download_url}'
                 WHERE id = "{task_id}"
             """)
-        result_sets = session.transaction().execute(prepared_query, commit_tx=True)
+        session.transaction().execute(prepared_query, commit_tx=True)
 
-    task = get_db_pool().retry_operation_sync(callee)
+    get_db_pool().retry_operation_sync(callee)
 
 
 def handle_process_event(event, context):
+    
     for message in event['messages']:
         task_json = json.loads(message['details']['message']['body'])
         task_id = task_json['task_id']
+        zip_url = task_json['zip_url']
+        
+        print(f'Triggere a message. task_id:{task_id} zip_url:{zip_url}')
         
         print('Unzipping request archive...')
-        unzip_archive(task_json['zip_url'], '/tmp')
+        unzip_archive(zip_url, '/tmp')
 
         # Calculate result
 
