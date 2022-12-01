@@ -37,3 +37,6 @@ packages/
 authorized_key.json
 /build/
 */build/
+/.idea/
+__pycache__
+*/build/

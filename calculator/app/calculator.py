@@ -114,7 +114,20 @@ def df_to_excel(df):
     return out.getvalue()
 
 
-def complete_task(task_id, status, result_download_url):
+def start_processing_task(task_id):
+    def callee(session):
+        prepared_query = session.prepare(
+            f"""
+                UPDATE requests
+                SET status = 'processing'
+                WHERE id = "{task_id}"
+            """)
+        session.transaction().execute(prepared_query, commit_tx=True)
+
+    get_db_pool().retry_operation_sync(callee)
+
+
+def complete_task(task_id, result_download_url):
     def callee(session):
         current_datetime = round(time.time() * 1000)
         prepared_query = session.prepare(
@@ -130,13 +143,17 @@ def complete_task(task_id, status, result_download_url):
 
 def handle_process_event(event, context):
     
+
     for message in event['messages']:
         task_json = json.loads(message['details']['message']['body'])
         task_id = task_json['task_id']
         zip_url = task_json['zip_url']
-        
-        print(f'Triggere a message. task_id:{task_id} zip_url:{zip_url}')
-        
+
+        print(f'Processing task. task_id:{task_id} zip_url:{zip_url}')
+
+        # Update task status
+        start_processing_task(task_id)
+
         print('Unzipping request archive...')
         unzip_archive(zip_url, '/tmp')
 
@@ -155,14 +172,18 @@ def handle_process_event(event, context):
             return
 
         try:
-            forecast_period_file = df_to_excel(calculated_data['forecast_period'])
+            forecast_period_file = df_to_excel(
+                calculated_data['forecast_period'])
             print('successfully calculated forecast_period')
-            forecast_forward_file = df_to_excel(calculated_data['forecast_forward'])
+            forecast_forward_file = df_to_excel(
+                calculated_data['forecast_forward'])
             print('successfully calculated forecast_forward')
-            forecast_common_forward_file = df_to_excel(calculated_data['forecast_common_forward'])
+            forecast_common_forward_file = df_to_excel(
+                calculated_data['forecast_common_forward'])
             print('successfully calculated forecast_common_forward')
         except Exception as e:
-            print('Error (to excel): Failed to convert calculated data to excel.' + str(e))
+            print(
+                'Error (to excel): Failed to convert calculated data to excel.' + str(e))
             return
 
         ###########
@@ -170,7 +191,7 @@ def handle_process_event(event, context):
 
         with ZipFile(archive, 'w') as zip_archive:
             # Create three files on zip archive
-            
+
             file1 = ZipInfo('forecast_period_results.xlsx')
             zip_archive.writestr(file1, forecast_period_file)
             file2 = ZipInfo('forecast_forward_results.xlsx')
@@ -182,10 +203,11 @@ def handle_process_event(event, context):
         with open('/tmp/result.zip', 'wb') as f:
             f.write(archive.getbuffer())
 
-        result_object = task_json['zip_url'].replace("request.zip", "result.zip")
+        result_object = task_json['zip_url'].replace(
+            "request.zip", "result.zip")
         # Upload to Object Storage and generate presigned url
         result_download_url = upload_and_presign(
             '/tmp/result.zip', result_object)
-        # Update task status in DocAPI
-        complete_task(task_id, 'complete', result_download_url)
+        # Update task status
+        complete_task(task_id, result_download_url)
     return "OK"
