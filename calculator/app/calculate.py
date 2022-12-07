@@ -113,7 +113,7 @@ def calculate(data: dict):
     for m in range(len(forc_series)):
         av.append(np.mean(np.cumsum(SUM_SALES[:, :, m], 0), 1)[-1])
 
-    # инициализация цикла (выход из него происходит, если вероятность продажи всего объема произведенных товаров меньше p)
+    # инициализация цикла (выход из него происходит по периоду прогноза)
     while i < forecast_period:
         # инициализация цикла для прохода по каждой товарной позиции
         for m in range(len(forc_series)):
@@ -179,6 +179,12 @@ def calculate(data: dict):
         r80 = np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.8, 1)[months-1]
         r95 = np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.95, 1)[months-1]
 
+        data = df.loc[forc_series[m]].astype('int64').dropna()
+        if data.mean() > 0:
+            vari = data.std() / data.mean() #расчет коэф. вариации
+        else:
+            vari = 99999
+
         t20 = 0
         t50 = 0
         t80 = 0
@@ -190,27 +196,7 @@ def calculate(data: dict):
         r_month = (np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[
                    i-1]) / forecast_period
 
-        if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
-            DATA = pd.DataFrame(sales_forecast, columns=[
-                                'Прогноз продаж по позиции "{}"'.format(forc_series[m])])
-        else:
-            DATA = pd.concat([DATA, pd.DataFrame(sales_forecast, columns=[
-                             'Прогноз продаж по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(sales_forecast_median, columns=[
-                         'Медиана прогноза продаж по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(sales_lb, columns=[
-                         'Нижняя граница прогноза продаж по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(sales_ub, columns=[
-                         'Верхняя граница прогноза продаж по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(np.mean(SUM_SALES[:, :, m], axis=1), columns=[
-                         'Прогноз продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(np.median(SUM_SALES[:, :, m], axis=1), columns=[
-                         'Медиана прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(np.quantile(SUM_SALES[:, :, m], 0.05, axis=1),
-                                             columns=['Нижняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA = pd.concat([DATA, pd.DataFrame(np.quantile(SUM_SALES[:, :, m], 0.95, axis=1),
-                                             columns=['Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
-        av = np.mean(np.cumsum(SUM_SALES[:, :, m], 0), 1)[months-1]
+
 
         if np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[i-1] > r95:
             for k in range(i):
@@ -308,21 +294,22 @@ def calculate(data: dict):
         storage_lost_optimum_sum = (
             r_sum_opt - r20)*(t_sum_opt/12)*interest*costs[m]*0.5
 
-        vivod_na_period = ['80% вер. продаж шт',
+        vivod_na_period = ['Коэфф. вариации',
+                           '80% вер. продаж шт',
                            '50% вер. продаж шт',
                            '20% вер. продаж шт',
                            '5% вер. продаж шт',
                            '80% вер. маржа',
                            '50% вер. маржа',
                            '20% вер. маржа',
-                           '5% верю. маржа',
+                           '5% вер. маржа',
                            'оптимум покрытия по сумме %',
                            'оптимум покрытия по сумме шт',
                            'Макс. время распродажи оптим. склада по сум',
                            'Потери на затовар. оптим. склада по сум'
                            ]
 
-        data_na_period = np.round([r20, r50, r80, r95, margin20, margin50, margin80, margin95,
+        data_na_period = np.round([vari, np.round(r20,0), np.round(r50,0), np.round(r80,0), np.round(r95,0), margin20, margin50, margin80, margin95,
                                    sum_opt, r_sum_opt, t_sum_opt, storage_lost_optimum_sum], 2)
 
         if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
@@ -333,33 +320,36 @@ def calculate(data: dict):
                               forc_series[m]], index=vivod_na_period)], axis=1)
 
         if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
-            DATA2 = pd.DataFrame(np.quantile(SUM_SALES[:, :, m], 0.8, axis=1), columns=[
-                                 '20% вероят. Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])
+            DATA2 = pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.8, axis=1), 0), columns=[
+                '20% вероят. Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])
         else:
-            DATA2 = pd.concat([DATA2, pd.DataFrame(np.quantile(SUM_SALES[:, :, m], 0.8, axis=1),
-                                                   columns=['20% вероят. Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
+            DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.8, axis=1), 0),
+                                                   columns=['20% вероят. Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(
+                                                           forc_series[m])])], axis=1)
 
-        DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.mean(SUM_SALES[:, :, m], axis=1), 0),
-                                               columns=['Средний прогноз продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
-        DATA2 = pd.concat([DATA2, pd.DataFrame(np.quantile(SUM_SALES[:, :, m], 0.2, axis=1),
-                                               columns=['80% вероят. Нижняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])], axis=1)
+        DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.5, axis=1), 0),
+                                               columns=['Средний прогноз продаж по периодам по позиции "{}"'.format(
+                                                   forc_series[m])])], axis=1)
+        DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.2, axis=1), 0),
+                                               columns=['80% вероят. Нижняя граница прогноза продаж по периодам по позиции "{}"'.format(
+                                                       forc_series[m])])], axis=1)
 
-    # np.round(np.mean(SUM_SALES[:,:,m],axis=1),2)
+        # np.round(np.mean(SUM_SALES[:,:,m],axis=1),2)
 
     # np.quantile(SUM_SALES[:,:,m],0.2,axis=1)
 
     # np.quantile(SUM_SALES[:,:,m],0.8,axis=1)
 
         if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
-            DATA3 = pd.DataFrame(sales_ub1,
+            DATA3 = pd.DataFrame(np.round(sales_ub1,0),
                                  columns=['"{}" 20% вероят. Верхняя граница прогноза накопительных продаж по позиции'.format(forc_series[m])])
         else:
-            DATA3 = pd.concat([DATA3, pd.DataFrame(sales_ub1,
+            DATA3 = pd.concat([DATA3, pd.DataFrame(np.round(sales_ub1,0),
                                                    columns=['"{}" 20% вероят. Верхняя граница прогноза накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
 
-        DATA3 = pd.concat([DATA3, pd.DataFrame(sales_forecast,
+        DATA3 = pd.concat([DATA3, pd.DataFrame(np.round(sales_forecast_median,0),
                                                columns=['"{}" Средний прогноз накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
-        DATA3 = pd.concat([DATA3, pd.DataFrame(sales_lb1,
+        DATA3 = pd.concat([DATA3, pd.DataFrame(np.round(sales_lb1,0),
                                                columns=['"{}" 80% вероят. Нижняя граница прогноза накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
 
     result = dict()

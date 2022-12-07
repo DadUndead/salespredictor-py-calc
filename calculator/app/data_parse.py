@@ -10,9 +10,13 @@ def data_parse(data_file_url, data_file_input_url):
     df = pd.read_excel(data_file_url)
     df_input = pd.read_excel(data_file_input_url)
 
+    #делаем мердж двух таблиц по inner и дропаем дубликаты. Далее обращения идут по номеру столбца а не названию
+    df_mid = df_input.merge(df, left_on=df_input.columns[0], right_on=df.columns[0], how='inner', copy='False')
+    df_data = df_mid.drop_duplicates(df_mid.columns[0])
+
     data = dict()
 
-    data['df'] = df # оставляем df без изменений
+    data['df'] = df_data.drop(df_data.columns[[1,2]], axis = 1) # data оставляем df без изменений
 
     # forc_series=['МВ210-101', 'МУ110-224.16Р М01', 'МУ210-402', 'ПЛК200-01-CS'] # список прогнозируемых позиций
     # analog=['','','',''] # список аналогов (если аналогов нет, то просто список пустых полей)
@@ -32,11 +36,11 @@ def data_parse(data_file_url, data_file_input_url):
     data['interest'] = 0.3  # процент стоимости денег для расчета стоимости "затоваривания"
 
     # список прогнозируемых позиций
-    data['forc_series'] = df_input['наименование'].to_list()
+    data['forc_series'] = df_data[df_data.columns[0]].to_list() # наименование
     # список сумм прибыли на единицу соответствующей товарной позиции
-    data['profit'] = df_input['Маржа'].to_list()
+    data['profit'] = df_data[df_data.columns[2]].to_list() # маржа
     # список затрат (хранение+"заморозка денежных средств") на единицу соответствующей товарной позиции
-    data['costs'] = df_input['Цена закупки'].to_list()
+    data['costs'] = df_data[df_data.columns[1]].to_list() # цена закупки
 
     return data
 
