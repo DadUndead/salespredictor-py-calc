@@ -41,3 +41,4 @@ authorized_key.json
 __pycache__
 */build/
 _trash
+/_ trash/

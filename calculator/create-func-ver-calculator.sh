@@ -17,7 +17,7 @@ yc serverless function version create \
   --runtime python39 \
   --entrypoint calculator.handle_process_event \
   --memory 1024m \
-  --execution-timeout 30s \
+  --execution-timeout 600s \
   --source-path ./build/func.zip \
   --service-account-id=$SERVICE_ACCOUNT_ID \
   --folder-id $FOLDER_ID \

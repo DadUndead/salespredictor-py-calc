@@ -107,7 +107,7 @@ def df_to_excel(df):
     writer = pd.ExcelWriter(out, engine='xlsxwriter')
 
     # Export data frame to excel
-    df.to_excel(excel_writer=writer, index=False, sheet_name='Sheet1')
+    df.to_excel(excel_writer=writer, index=True, sheet_name='Sheet1')
     writer.save()
     writer.close()
 
