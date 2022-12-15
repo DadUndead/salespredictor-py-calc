@@ -5,6 +5,8 @@ import pandas as pd
 from random import sample
 import statsmodels.api as sm
 from scipy.special import logsumexp
+from sklearn.linear_model import LinearRegression
+from sklearn import metrics
 
 
 def calculate(data: dict):
@@ -33,6 +35,9 @@ def calculate(data: dict):
     profit = data['profit']
     # список затрат (хранение+"заморозка денежных средств") на единицу соответствующей товарной позиции
     costs = data['costs']
+    # маржа доля и куммулятивная сумма
+    margin_part = data['margin_part']
+    margin_cum = data['margin_cum']
 
     sales95 = 0  # переменная для определения момента окончания моделирования
     i = 0  # счетчик циклов
@@ -179,11 +184,45 @@ def calculate(data: dict):
         r80 = np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.8, 1)[months-1]
         r95 = np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.95, 1)[months-1]
 
+        # блок сигмы тренд
         data = df.loc[forc_series[m]].astype('int64').dropna()
+        regressor = LinearRegression()
+        regressor.fit(np.array(data.index.to_list()).reshape((-1, 1)), data)
+
         if data.mean() > 0:
-            vari = data.std() / data.mean() #расчет коэф. вариации
+            trend = regressor.coef_[0] * forecast_period / data.mean() * 100  # тренд % рост продаж за цикл
+        else:
+            trend = 0
+
+        y_pred = regressor.predict(np.array(data.index.to_list()).reshape((-1, 1)))
+        y_test = data
+
+        sigma_trend = np.sqrt(metrics.mean_squared_error(y_test, y_pred))
+
+        if sigma_trend > 0:
+            vari = sigma_trend / data.mean()
         else:
             vari = 99999
+
+        XYZ = ''
+
+        if vari < 0.3:
+            XYZ = 'X'
+        elif vari < 0.7:
+            XYZ = 'Y'
+        else:
+            XYZ = 'Z'
+
+        ABC = ''
+
+        if margin_cum[m] < 80:
+            ABC = 'A'
+        elif margin_cum[m] < 95:
+            ABC = 'B'
+        else:
+            ABC = 'C'
+
+
 
         t20 = 0
         t50 = 0
@@ -191,10 +230,14 @@ def calculate(data: dict):
         t95 = 0
 
         t_optimum = 0
+        t_sum_opt = 0
 
         # расчет экстраполированных продаж для расчета долгоокупаемых складов
-        r_month = (np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[
-                   i-1]) / forecast_period
+
+        if (np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[i-1]) > 0:
+            r_month = (np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[i-1]) / forecast_period
+        else:
+            r_month = 99999
 
 
 
@@ -274,10 +317,17 @@ def calculate(data: dict):
         r_sum_opt = np.quantile(
             np.cumsum(SUM_SALES[:, :, m], 0), (sum_opt/100), 1)[months-1]
 
-        margin95 = r95*profit[m]
-        margin80 = r80*profit[m]
-        margin50 = r50*profit[m]
-        margin20 = r20*profit[m]
+        margin95 = np.round(r95,0)*profit[m]
+        margin80 = np.round(r80,0)*profit[m]
+        margin50 = np.round(r50,0)*profit[m]
+        margin20 = np.round(r20,0)*profit[m]
+
+        costs95 = np.round(r95,0) * costs[m]
+        costs80 = np.round(r80,0) * costs[m]
+        costs50 = np.round(r50,0) * costs[m]
+        costs20 = np.round(r20,0) * costs[m]
+        costs_opt = np.round(r_sum_opt,0) * costs[m]
+
 
         if np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[i-1] > r_sum_opt:
             for k in range(i):
@@ -294,7 +344,13 @@ def calculate(data: dict):
         storage_lost_optimum_sum = (
             r_sum_opt - r20)*(t_sum_opt/12)*interest*costs[m]*0.5
 
-        vivod_na_period = ['Коэфф. вариации',
+        vivod_na_period = ['ABC',
+                           'XYZ',
+                           'Доля маржи %',
+                            'Коэфф. вариации',
+                           'тренд %',
+                           'Оптимальный склад, шт',
+                           'Макс. время распродажи оптим. склада',
                            '80% вер. продаж шт',
                            '50% вер. продаж шт',
                            '20% вер. продаж шт',
@@ -303,14 +359,18 @@ def calculate(data: dict):
                            '50% вер. маржа',
                            '20% вер. маржа',
                            '5% вер. маржа',
-                           'оптимум покрытия по сумме %',
-                           'оптимум покрытия по сумме шт',
-                           'Макс. время распродажи оптим. склада по сум',
-                           'Потери на затовар. оптим. склада по сум'
+                           'Затраты на закупку оптим. склада',
+                           'Затраты на закупку по 80% вер',
+                           'Затраты на закупку по 50% вер',
+                           'Затраты на закупку по 20% вер',
+                           'Затраты на закупку по 5% вер'
                            ]
 
-        data_na_period = np.round([vari, np.round(r20,0), np.round(r50,0), np.round(r80,0), np.round(r95,0), margin20, margin50, margin80, margin95,
-                                   sum_opt, r_sum_opt, t_sum_opt, storage_lost_optimum_sum], 2)
+        data_na_period = [ABC,  XYZ, np.round(margin_part[m], 1), np.round(vari, 2), np.round(trend, 1), np.round(r_sum_opt, 0), np.round(t_sum_opt, 1), np.round(r20, 0), np.round(r50, 0),
+                          np.round(r80, 0), np.round(r95, 0),
+                          np.round(margin20, 0), np.round(margin50, 0), np.round(margin80, 0), np.round(margin95, 0),
+                          np.round(costs_opt, 0), np.round(costs20, 0),
+                          np.round(costs50, 0), np.round(costs80, 0), np.round(costs95, 0)]
 
         if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
             DATA1 = pd.DataFrame(data_na_period, columns=[

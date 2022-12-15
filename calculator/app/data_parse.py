@@ -14,9 +14,17 @@ def data_parse(data_file_url, data_file_input_url):
     df_mid = df_input.merge(df, left_on=df_input.columns[0], right_on=df.columns[0], how='inner', copy='False')
     df_data = df_mid.drop_duplicates(df_mid.columns[0])
 
+    df_data['маржа_сум'] = df_data[df_data.columns[3:]].sum(axis=1) * df_data['Маржа'] #сумм маржа за весь загружен период
+    df_data['Доля маржи'] = df_data['маржа_сум'] * 100 / df_data['маржа_сум'].sum() #доля маржи %
+    df_data = df_data.sort_values(by='Доля маржи', ascending=False)
+    df_data['cumsum'] = df_data['Доля маржи'].cumsum() # накомпленная доля для АБС
+    df_data = df_data.sort_index() #возвращаем порядок
+
+
+
     data = dict()
 
-    data['df'] = df_data.drop(df_data.columns[[1,2]], axis = 1) # data оставляем df без изменений
+    data['df'] = df_data.drop(['маржа_сум', 'Доля маржи', 'cumsum', df_data.columns[[1,2]][0], df_data.columns[[1,2]][1]], axis = 1)
 
     # forc_series=['МВ210-101', 'МУ110-224.16Р М01', 'МУ210-402', 'ПЛК200-01-CS'] # список прогнозируемых позиций
     # analog=['','','',''] # список аналогов (если аналогов нет, то просто список пустых полей)
@@ -41,6 +49,10 @@ def data_parse(data_file_url, data_file_input_url):
     data['profit'] = df_data[df_data.columns[2]].to_list() # маржа
     # список затрат (хранение+"заморозка денежных средств") на единицу соответствующей товарной позиции
     data['costs'] = df_data[df_data.columns[1]].to_list() # цена закупки
+
+    data['margin_part'] = df_data['Доля маржи'].to_list()
+    data['margin_cum'] = df_data['cumsum'].to_list()
+
 
     return data
 
