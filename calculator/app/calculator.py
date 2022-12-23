@@ -6,11 +6,30 @@ import ydb
 import boto3
 
 import time
+
+from ydb.convert import ResultSet
+
 import data_parse
 import calculate as calc
 import io
 import pandas as pd
+import yandexcloud
 
+from yandex.cloud.serverless.apigateway.websocket.v1.connection_service_pb2 import SendToConnectionRequest
+from yandex.cloud.serverless.apigateway.websocket.v1.connection_service_pb2_grpc import ConnectionServiceStub
+
+sa_key_file = open('authorized_key.json')
+data = json.load(sa_key_file)
+
+script_dir = os.path.dirname(__file__)
+rel_path = "authorized_key.json"
+abs_file_path = os.path.join(script_dir, rel_path)
+
+with open(abs_file_path) as json_file:
+    sa_key = json.load(json_file)
+
+sdk = yandexcloud.SDK(service_account_key=sa_key)
+ws_client = sdk.client(ConnectionServiceStub)
 
 boto_session = None
 storage_client = None
@@ -80,6 +99,7 @@ def get_storage_client():
     )
     return storage_client
 
+
 # Converter handler
 
 
@@ -127,6 +147,19 @@ def start_processing_task(task_id):
     get_db_pool().retry_operation_sync(callee)
 
 
+def update_task_status(task_id, status):
+    def callee(session):
+        prepared_query = session.prepare(
+            f"""
+                UPDATE requests
+                SET status = "{status}"
+                WHERE id = "{task_id}"
+            """)
+        session.transaction().execute(prepared_query, commit_tx=True)
+
+    get_db_pool().retry_operation_sync(callee)
+
+
 def complete_task(task_id, result_download_url):
     def callee(session):
         current_datetime = round(time.time() * 1000)
@@ -141,18 +174,66 @@ def complete_task(task_id, result_download_url):
     get_db_pool().retry_operation_sync(callee)
 
 
-def handle_process_event(event, context):
-    
+def get_connection_id(task_id):
+    def callee(session):
+        prepared_query = session.prepare(
+            f"""
+                SELECT u.ws_connection_id as connection_id
+                FROM users u
+                INNER JOIN requests r ON r.user_id=u.id
+                WHERE r.id="{task_id}"
+                LIMIT 1
+            """)
+        return session.transaction().execute(prepared_query, commit_tx=True)
 
+    result_set: ResultSet = get_db_pool().retry_operation_sync(callee)[0]
+
+    print(f"result: {result_set.rows[0]}")
+
+    return result_set.rows[0]["connection_id"]
+
+
+def send_status_ws_message(task_id, status):
+    try:
+        connection_id = get_connection_id(task_id)
+        msg = json.dumps({
+            "type": "status-update",
+            "payload": {
+                "type": 'requestStatusChange',
+                "requestId": task_id,
+                "status": status
+            }
+        }).encode('utf-8')
+
+        print(f'connection_id:' + connection_id)
+        print(f'Sending ws message:' + str(msg))
+
+        ws_request = SendToConnectionRequest(
+            connection_id=connection_id,
+            data=msg,
+            type=2,
+        )
+
+        ws_client.Send(ws_request)
+
+    except Exception as e:
+        print(f'Error on sending ws message. ' + str(e))
+
+
+def handle_process_event(event, context):
     for message in event['messages']:
         task_json = json.loads(message['details']['message']['body'])
         task_id = task_json['task_id']
         zip_url = task_json['zip_url']
 
+        # update request status in db
+        # send ws message {type: 'status-update', requestId, status: 'processing'}
+
         print(f'Processing task. task_id:{task_id} zip_url:{zip_url}')
 
         # Update task status
         start_processing_task(task_id)
+        send_status_ws_message(task_id, 'processing')
 
         print('Unzipping request archive...')
         unzip_archive(zip_url, '/tmp')
@@ -163,12 +244,16 @@ def handle_process_event(event, context):
             data = data_parse('/tmp/data.xlsx', '/tmp/data_input.xlsx')
         except Exception as e:
             print(f'Error (data_parse): Failed to parse data files. ' + str(e))
+            update_task_status(task_id, 'error')
+            send_status_ws_message(task_id, 'error')
             return
 
         try:
             calculated_data = calc(data)
         except Exception as e:
             print('Error (calculate): Failed to calculate results. ' + str(e))
+            update_task_status(task_id, 'error')
+            send_status_ws_message(task_id, 'error')
             return
 
         try:
@@ -184,6 +269,8 @@ def handle_process_event(event, context):
         except Exception as e:
             print(
                 'Error (to excel): Failed to convert calculated data to excel.' + str(e))
+            update_task_status(task_id, 'error')
+            send_status_ws_message(task_id, 'error')
             return
 
         ###########
@@ -205,9 +292,10 @@ def handle_process_event(event, context):
 
         result_object = task_json['zip_url'].replace(
             "request.zip", "result.zip")
-        # Upload to Object Storage and generate presigned url
+        # Upload to Object Storage and generate resigned url
         result_download_url = upload_and_presign(
             '/tmp/result.zip', result_object)
         # Update task status
         complete_task(task_id, result_download_url)
+        send_status_ws_message(task_id, 'complete')
     return "OK"

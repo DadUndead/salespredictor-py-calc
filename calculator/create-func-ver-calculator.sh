@@ -5,7 +5,7 @@ mkdir build
 source ../.env
 
 # сделать архив
-cd ./app
+cd ./app || exit
 rm ../build/func.zip
 7z a -tzip ../build/func.zip .
 cd ..
@@ -14,7 +14,7 @@ echo "yc function version create $CALCULATOR_FUNCTION_NAME "
 
 yc serverless function version create \
   --function-name=$CALCULATOR_FUNCTION_NAME \
-  --runtime python39 \
+  --runtime python38 \
   --entrypoint calculator.handle_process_event \
   --memory 1024m \
   --execution-timeout 600s \

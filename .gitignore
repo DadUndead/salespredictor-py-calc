@@ -34,11 +34,11 @@ packages/
 /.vscode/settings.json
 /__pycache__/
 */__pycache__/*
-authorized_key.json
+calculator/app/authorized_key.json
 /build/
 */build/
 /.idea/
 __pycache__
-*/build/
 _trash
 /_ trash/
+
