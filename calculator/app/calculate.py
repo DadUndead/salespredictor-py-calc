@@ -12,7 +12,7 @@ from sklearn import metrics
 def calculate(data: dict):
 
     df = data['df']  # загрузка исходных данных продаж
-    df.set_index('наименование', inplace=True)
+    df.set_index(df.columns[0], inplace=True)
     df = df.transpose().reset_index().transpose()
 
     # список количества месяцев, для которых необходимо провести расчеты по соответствующей товарной позиции
@@ -38,6 +38,19 @@ def calculate(data: dict):
     # маржа доля и куммулятивная сумма
     margin_part = data['margin_part']
     margin_cum = data['margin_cum']
+
+    if forc_series == []:
+        dac = {'наименование': ['Ошибка'], 'Ratings': [0], 'q1': [0]}
+        df = pd.DataFrame(dac)
+        df.set_index(df.columns[0], inplace=True)
+        df = df.transpose().reset_index().transpose()
+        forc_series = ['Ошибка']
+
+        profit = [0]
+        costs = [0]
+        margin_part = [0]
+        margin_cum = [0]
+
 
     sales95 = 0  # переменная для определения момента окончания моделирования
     i = 0  # счетчик циклов
@@ -187,26 +200,29 @@ def calculate(data: dict):
         # блок сигмы тренд
         data = df.loc[forc_series[m]].astype('int64').dropna()
         regressor = LinearRegression()
-        regressor.fit(np.array(data.index.to_list()).reshape((-1, 1)), data)
+        regressor.fit(np.array(data.index.to_list())[-2*forecast_period:].reshape((-1, 1)), data[-2*forecast_period:])
 
-        if data.mean() > 0:
-            trend = regressor.coef_[0] * forecast_period / data.mean() * 100  # тренд % рост продаж за цикл
+        if data[-2*forecast_period:].mean() > 0:
+            trend = regressor.coef_[0] * forecast_period / data[-2*forecast_period:].mean() * 100  # тренд % рост продаж за цикл
         else:
             trend = 0
 
-        y_pred = regressor.predict(np.array(data.index.to_list()).reshape((-1, 1)))
-        y_test = data
+        regressor.fit(np.array(data.index.to_list())[-1*forecast_period:].reshape((-1, 1)), data[-1*forecast_period:]) #еще раз считаем только на 1 период
+        y_pred = regressor.predict(np.array(data.index.to_list())[-1*forecast_period:].reshape((-1, 1)))
+        y_test = data[-1*forecast_period:]
 
         sigma_trend = np.sqrt(metrics.mean_squared_error(y_test, y_pred))
 
-        if sigma_trend > 0:
-            vari = sigma_trend / data.mean()
+        if data[-1*forecast_period:].mean() > 0:
+            vari = sigma_trend / data[-1*forecast_period:].mean()
         else:
-            vari = 99999
+            vari = 0
 
         XYZ = ''
 
-        if vari < 0.3:
+        if vari == 0:
+            XYZ = 'X но коэф. вариации 0, проверить данные'
+        elif vari < 0.3:
             XYZ = 'X'
         elif vari < 0.7:
             XYZ = 'Y'
@@ -222,6 +238,37 @@ def calculate(data: dict):
         else:
             ABC = 'C'
 
+
+        #блок рекомендации
+        recom = ''
+        group = ''
+        if (XYZ == 'X' or XYZ == 'X но коэф. вариации 0, проверить данные') and ABC == 'A':
+            recom = 'AX - По оптимуму и выше'
+            group = 'Первая'
+        elif XYZ == 'Y' and ABC == 'A':
+            recom = 'AY - По оптимуму'
+            group = 'Первая'
+        elif XYZ == 'Z' and ABC == 'A':
+            recom = 'AZ - по 80% вероят. или выше'
+            group = 'Вторая'
+        elif (XYZ == 'X' or XYZ == 'X но коэф. вариации 0, проверить данные') and ABC == 'B':
+            recom = 'BX - По оптимуму'
+            group = 'Первая'
+        elif XYZ == 'Y' and ABC == 'B':
+            recom = 'BY - По оптимуму'
+            group = 'Вторая'
+        elif XYZ == 'Z' and ABC == 'B':
+            recom = 'BZ - По 80% вероят.'
+            group = 'Третья'
+        elif (XYZ == 'X' or XYZ == 'X но коэф. вариации 0, проверить данные') and ABC == 'C':
+            recom = 'CX - По оптимуму'
+            group = 'Вторая'
+        elif XYZ == 'Y' and ABC == 'C':
+            recom = 'CY - По 80% вероят.'
+            group = 'Третья'
+        else:
+            recom = 'CZ - Не закупать'
+            group = 'Третья'
 
 
         t20 = 0
@@ -247,7 +294,7 @@ def calculate(data: dict):
                 if q > r95:
                     q1 = np.quantile(
                         np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[k-1]
-                    t95 = (r95-q1)/(q-q1)+k-1
+                    t95 = (r95-q1)/(q-q1)+k
                     break
         else:
             t95 = r95 / r_month
@@ -260,7 +307,7 @@ def calculate(data: dict):
                 if q > r80:
                     q1 = np.quantile(
                         np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[k-1]
-                    t80 = (r80-q1)/(q-q1)+k-1
+                    t80 = (r80-q1)/(q-q1)+k
                     break
         else:
             t80 = r80 / r_month
@@ -272,7 +319,7 @@ def calculate(data: dict):
                 if q > r50:
                     q1 = np.quantile(
                         np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[k-1]
-                    t50 = (r50-q1)/(q-q1)+k-1
+                    t50 = (r50-q1)/(q-q1)+k
                     break
         else:
             t50 = r50 / r_month
@@ -283,7 +330,7 @@ def calculate(data: dict):
                 if q > r20:
                     q1 = np.quantile(
                         np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[k-1]
-                    t20 = (r20-q1)/(q-q1)+k-1
+                    t20 = (r20-q1)/(q-q1)+k
                     break
 
         else:
@@ -314,13 +361,18 @@ def calculate(data: dict):
 
         sum_opt = arr_f.index(min(arr_f))+20
 
-        r_sum_opt = np.quantile(
-            np.cumsum(SUM_SALES[:, :, m], 0), (sum_opt/100), 1)[months-1]
+        r_sum_opt = np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), (sum_opt/100), 1)[months-1]
+
+        sales_cum_opt = np.quantile(np.cumsum(SUM_SALES[:, :, m], 0), (sum_opt / 100), 1)
 
         margin95 = np.round(r95,0)*profit[m]
         margin80 = np.round(r80,0)*profit[m]
         margin50 = np.round(r50,0)*profit[m]
         margin20 = np.round(r20,0)*profit[m]
+
+        margin_ub1 = sales_ub1 * profit[m]
+        margin_median = sales_forecast_median * profit[m]
+        margin_lb1 = sales_lb1 * profit[m]
 
         costs95 = np.round(r95,0) * costs[m]
         costs80 = np.round(r80,0) * costs[m]
@@ -335,22 +387,23 @@ def calculate(data: dict):
                 if q > r_sum_opt:
                     q1 = np.quantile(
                         np.cumsum(SUM_SALES[:, :, m], 0), 0.2, 1)[k-1]
-                    t_sum_opt = (r_sum_opt-q1)/(q-q1)+k-1
+                    t_sum_opt = (r_sum_opt-q1)/(q-q1)+k
                     break
         else:
 
             t_sum_opt = r_sum_opt / r_month
 
-        storage_lost_optimum_sum = (
-            r_sum_opt - r20)*(t_sum_opt/12)*interest*costs[m]*0.5
+        storage_lost_optimum_sum = (r_sum_opt - r20)*(t_sum_opt/12)*interest*costs[m]*0.5
 
         vivod_na_period = ['ABC',
                            'XYZ',
-                           'Доля маржи %',
-                            'Коэфф. вариации',
-                           'тренд %',
+                           'Рекомендация по закупке склада',
+                           'Очередь распределения средств',
                            'Оптимальный склад, шт',
                            'Макс. время распродажи оптим. склада',
+                           'Доля маржи %',
+                            'Коэфф. вариации',
+                           'тренд роста продаж %',
                            '80% вер. продаж шт',
                            '50% вер. продаж шт',
                            '20% вер. продаж шт',
@@ -366,7 +419,8 @@ def calculate(data: dict):
                            'Затраты на закупку по 5% вер'
                            ]
 
-        data_na_period = [ABC,  XYZ, np.round(margin_part[m], 1), np.round(vari, 2), np.round(trend, 1), np.round(r_sum_opt, 0), np.round(t_sum_opt, 1), np.round(r20, 0), np.round(r50, 0),
+        data_na_period = [ABC,  XYZ, recom, group, np.round(r_sum_opt, 0), np.round(t_sum_opt, 1), np.round(margin_part[m], 1), np.round(vari, 2), np.round(trend, 1),
+                           np.round(r20, 0), np.round(r50, 0),
                           np.round(r80, 0), np.round(r95, 0),
                           np.round(margin20, 0), np.round(margin50, 0), np.round(margin80, 0), np.round(margin95, 0),
                           np.round(costs_opt, 0), np.round(costs20, 0),
@@ -381,17 +435,17 @@ def calculate(data: dict):
 
         if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
             DATA2 = pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.8, axis=1), 0), columns=[
-                '20% вероят. Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(forc_series[m])])
+                '"{}" 20% вероят. Верхняя граница прогноза продаж по периодам по позиции'.format(forc_series[m])])
         else:
             DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.8, axis=1), 0),
-                                                   columns=['20% вероят. Верхняя граница прогноза продаж по периодам по позиции "{}"'.format(
+                                                   columns=['"{}" 20% вероят. Верхняя граница прогноза продаж по периодам по позиции'.format(
                                                            forc_series[m])])], axis=1)
 
         DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.5, axis=1), 0),
-                                               columns=['Средний прогноз продаж по периодам по позиции "{}"'.format(
+                                               columns=['"{}" Средний прогноз продаж по периодам по позиции'.format(
                                                    forc_series[m])])], axis=1)
         DATA2 = pd.concat([DATA2, pd.DataFrame(np.round(np.quantile(SUM_SALES[:, :, m], 0.2, axis=1), 0),
-                                               columns=['80% вероят. Нижняя граница прогноза продаж по периодам по позиции "{}"'.format(
+                                               columns=['"{}" 80% вероят. Нижняя граница прогноза продаж по периодам по позиции'.format(
                                                        forc_series[m])])], axis=1)
 
         # np.round(np.mean(SUM_SALES[:,:,m],axis=1),2)
@@ -412,6 +466,32 @@ def calculate(data: dict):
         DATA3 = pd.concat([DATA3, pd.DataFrame(np.round(sales_lb1,0),
                                                columns=['"{}" 80% вероят. Нижняя граница прогноза накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
 
+        DATA3 = pd.concat([DATA3, pd.DataFrame(np.round(sales_cum_opt, 0),
+                                               columns=['"{}" Оптимальный склад (накопительный прогноз)'.format(forc_series[m])])], axis=1)
+
+        if m == 0:  # здесь начинается запись рассчитанных данных в двумерный массив для экспорта данных в эксель
+            DATA4 = pd.DataFrame(np.round(margin_ub1, 0),
+                                 columns=['"{}" 20% вероят. Верхняя граница прогноза маржи накопительных продаж по позиции'.format(forc_series[m])])
+        else:
+            DATA4 = pd.concat([DATA4, pd.DataFrame(np.round(margin_ub1, 0),
+                                                   columns=['"{}" 20% вероят. Верхняя граница прогноза маржи накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
+
+        DATA4 = pd.concat([DATA4, pd.DataFrame(np.round(margin_median, 0),
+                                               columns=['"{}" Средний прогноз маржи накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
+        DATA4 = pd.concat([DATA4, pd.DataFrame(np.round(margin_lb1, 0),
+                                               columns=['"{}" 80% вероят. Нижняя граница прогноза маржи накопительных продаж по позиции'.format(forc_series[m])])], axis=1)
+
+    DATA2.index += 1
+    DATA3.index += 1
+    DATA4.index += 1
+
+
+    DATA4.insert(0, 'Верхняя граница 20% вероят. общей накопленной маржи', DATA4[DATA4.columns[0::3]].sum(axis=1))
+    DATA4.insert(1, 'Средняя общая накопленная маржа', DATA4[DATA4.columns[2::3]].sum(axis=1))
+    DATA4.insert(2, 'Нижняя граница 80% вероят. общей накопленной маржи', DATA4[DATA4.columns[4::3]].sum(axis=1))
+    DATA4.insert(3, '-', '-')
+
+
     result = dict()
 
     # экспорт сформированной базы на 1 период
@@ -420,6 +500,8 @@ def calculate(data: dict):
     result['forecast_forward'] = DATA2.transpose()
     # экспорт сформированной базы в прогноз накопительных продаж вперед
     result['forecast_common_forward'] = DATA3.transpose()
+    # экспорт сформированной базы в финансовый прогноз накопительных продаж вперед
+    result['forecast_common_finance'] = DATA4.transpose()
 
     return result
 

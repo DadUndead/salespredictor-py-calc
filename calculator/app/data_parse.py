@@ -9,12 +9,27 @@ def data_parse(data_file_url, data_file_input_url):
     
     df = pd.read_excel(data_file_url)
     df_input = pd.read_excel(data_file_input_url)
+    df_input = df_input[df_input.columns[:3]]
+
+    forecast_period = 12 #цикл периодичности
+
+    #нан убираем и меняем на 0
+    df = df.dropna(axis =0, how='all')
+    df = df.dropna(axis=1, how='all')
+    df_input = df_input.dropna(axis=0, how='all')
+    df_input = df_input.dropna(axis=1, how='all')
+    df = df.fillna(0)
+    df_input = df_input.fillna(0)
 
     #делаем мердж двух таблиц по inner и дропаем дубликаты. Далее обращения идут по номеру столбца а не названию
     df_mid = df_input.merge(df, left_on=df_input.columns[0], right_on=df.columns[0], how='inner', copy='False')
     df_data = df_mid.drop_duplicates(df_mid.columns[0])
 
-    df_data['маржа_сум'] = df_data[df_data.columns[3:]].sum(axis=1) * df_data['Маржа'] #сумм маржа за весь загружен период
+
+
+    df_data['маржа_сум'] = df_data[df_data.columns[3:]][df_data[df_data.columns[3:]].columns[-1*forecast_period:]].sum(axis=1) * df_data['Маржа'] #сумм маржа за посл 12 периодов
+
+
     df_data['Доля маржи'] = df_data['маржа_сум'] * 100 / df_data['маржа_сум'].sum() #доля маржи %
     df_data = df_data.sort_values(by='Доля маржи', ascending=False)
     df_data['cumsum'] = df_data['Доля маржи'].cumsum() # накомпленная доля для АБС
@@ -33,7 +48,7 @@ def data_parse(data_file_url, data_file_input_url):
     
     data['months'] = 1  # список количества месяцев, для которых необходимо провести расчеты по соответствующей товарной позиции
     data['period_start'] = 1  # период начала моделирования с момента последнего периода, на которые есть статистические данные по продажам
-    data['forecast_period'] = 12  # период для прогнозирования продаж
+    data['forecast_period'] = forecast_period  # период для прогнозирования продаж
 
     # технический параметр для объема генерации случайных чисел в коде (увеличивает гладкость распределений, но и увеличивает время расчета)
     data['random_amount'] = 200
