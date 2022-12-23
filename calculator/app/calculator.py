@@ -266,6 +266,9 @@ def handle_process_event(event, context):
             forecast_common_forward_file = df_to_excel(
                 calculated_data['forecast_common_forward'])
             print('successfully calculated forecast_common_forward')
+            forecast_common_finance = df_to_excel(
+                calculated_data['forecast_common_finance'])
+            print('successfully calculated forecast_common_finance')
         except Exception as e:
             print(
                 'Error (to excel): Failed to convert calculated data to excel.' + str(e))
@@ -279,12 +282,14 @@ def handle_process_event(event, context):
         with ZipFile(archive, 'w') as zip_archive:
             # Create three files on zip archive
 
-            file1 = ZipInfo('forecast_period_results.xlsx')
+            file1 = ZipInfo('прогноз склада на следующий период.xlsx')
             zip_archive.writestr(file1, forecast_period_file)
-            file2 = ZipInfo('forecast_forward_results.xlsx')
+            file2 = ZipInfo('прогноз продаж по периодам.xlsx')
             zip_archive.writestr(file2, forecast_forward_file)
-            file3 = ZipInfo('forecast_common_forward_results.xlsx')
+            file3 = ZipInfo('накопительный прогноз продаж по периодам.xlsx')
             zip_archive.writestr(file3, forecast_common_forward_file)
+            file3 = ZipInfo('накопительный прогноз маржи.xlsx')
+            zip_archive.writestr(file3, forecast_common_finance)
 
         # Flush archive stream to a file on disk
         with open('/tmp/result.zip', 'wb') as f:
