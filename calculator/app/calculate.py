@@ -11,6 +11,26 @@ from sklearn import metrics
 
 def calculate(data: dict):
 
+    #блок функция фильтрации выбросов
+    def filtr(x, wind, sigm):
+        new_x = x.copy()
+
+        if (len(x) > wind):
+            wind = wind
+        else:
+            wind = len(x)
+
+        for i in range(wind, len(x) + 1):
+            mediana = np.median(x[i - wind:i])
+            stand = np.std(x[i - wind:i])
+            avg = np.mean(x[i - wind:i])
+
+            for z in range(i - wind, i):
+                if ((x[z] - mediana) > sigm * stand) and ((x[z] - avg) > 2 * sigm * avg):
+                    new_x[z] = mediana  # замена выброса
+
+        return new_x
+
     df = data['df']  # загрузка исходных данных продаж
     df.set_index(df.columns[0], inplace=True)
     df = df.transpose().reset_index().transpose()
@@ -39,8 +59,9 @@ def calculate(data: dict):
     margin_part = data['margin_part']
     margin_cum = data['margin_cum']
 
+    #защита от пустых данных
     if forc_series == []:
-        dac = {'наименование': ['Ошибка'], 'Ratings': [0], 'q1': [0]}
+        dac = {'наименование': ['Ошибка'], 'error': [0], 'err': [0]}
         df = pd.DataFrame(dac)
         df.set_index(df.columns[0], inplace=True)
         df = df.transpose().reset_index().transpose()
@@ -63,7 +84,7 @@ def calculate(data: dict):
         # инициализация цикла для прохода по каждой товарной позиции
         for m in range(len(forc_series)):
             # if (analog[m]==''): # в данном условии осуществляем расчет стат базы в зависимости от того, заданы аналоги или нет
-            data = df.loc[forc_series[m]].astype('int64').dropna()
+            data=filtr(df.loc[forc_series[m]].astype('int64').dropna(), forecast_period, 2.1)
             # else:
             # data=df1.loc[analog[m]].astype('int64').dropna()
             if i == 0:
@@ -136,7 +157,7 @@ def calculate(data: dict):
         # инициализация цикла для прохода по каждой товарной позиции
         for m in range(len(forc_series)):
             # if (analog[m]==''): # в данном условии осуществляем расчет стат базы в зависимости от того, заданы аналоги или нет
-            data = df.loc[forc_series[m]].astype('int64').dropna()
+            data=filtr(df.loc[forc_series[m]].astype('int64').dropna(), forecast_period, 2.1)
             # else:
             # data=df[analog[m]].dropna()
 
